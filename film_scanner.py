@@ -32,6 +32,9 @@ class FilmScannerApp:
         # Scanner variables
         self.source_manager = None
         self.scanner = None
+        self.scanner_name = ""
+        self.is_wia = False
+        self.is_wia = False
         self.preview_image = None
         self.preview_image_original = None
         self.scanned_images = []
@@ -767,6 +770,8 @@ class FilmScannerApp:
             try:
                 self.logger.info(f"Trying to open: {scanner_name}")
                 self.scanner = self.source_manager.OpenSource(scanner_name)
+                self.scanner_name = scanner_name  # Store for WIA detection
+                self.is_wia = 'WIA-' in scanner_name
                 self.status_label.config(text=f"Connected: {scanner_name}", fg='#00ff00')
                 self.logger.info(f"Successfully connected to scanner: {scanner_name}")
                 return True
@@ -817,6 +822,8 @@ class FilmScannerApp:
             try:
                 self.logger.info(f"Trying to open: {scanner_name}")
                 self.scanner = self.source_manager.OpenSource(scanner_name)
+                self.scanner_name = scanner_name
+                self.is_wia = 'WIA-' in scanner_name
                 
                 self.status_label.config(text=f"Connected: {scanner_name}", fg='#00ff00')
                 self.logger.info(f"Legacy TWAIN connected: {scanner_name}")
@@ -900,8 +907,13 @@ class FilmScannerApp:
                 raise Exception("Scanner not initialized")
             
             # Set up scanner for preview (lower resolution)
-            self.scanner.SetCapability(twain.ICAP_XRESOLUTION, twain.TWTY_FIX32, 150)
-            self.scanner.SetCapability(twain.ICAP_YRESOLUTION, twain.TWTY_FIX32, 150)
+            # WIA drivers may not support all capabilities
+            if not self.is_wia:
+                try:
+                    self.scanner.SetCapability(twain.ICAP_XRESOLUTION, twain.TWTY_FIX32, 150)
+                    self.scanner.SetCapability(twain.ICAP_YRESOLUTION, twain.TWTY_FIX32, 150)
+                except:
+                    self.logger.warning("Could not set resolution for preview, using defaults")
             
             # Request scan
             self.scanner.RequestAcquire(0, 0)
@@ -987,18 +999,26 @@ class FilmScannerApp:
             if resolution < 75 or resolution > 6400:
                 raise ValueError(f"Invalid resolution: {resolution}. Must be between 75 and 6400 DPI.")
             
-            self.scanner.SetCapability(twain.ICAP_XRESOLUTION, twain.TWTY_FIX32, resolution)
-            self.scanner.SetCapability(twain.ICAP_YRESOLUTION, twain.TWTY_FIX32, resolution)
-            
-            # Set color mode
-            if self.color_mode.get() == "Color":
-                pixel_type = twain.TWPT_RGB
-            elif self.color_mode.get() == "Grayscale":
-                pixel_type = twain.TWPT_GRAY
+            # WIA drivers have limited capability support
+            if self.is_wia:
+                self.logger.warning("WIA scanner detected - using simplified settings")
+                self.logger.info("Note: Resolution and color mode will be set through scanner UI")
             else:
-                pixel_type = twain.TWPT_BW
-            
-            self.scanner.SetCapability(twain.ICAP_PIXELTYPE, twain.TWTY_UINT16, pixel_type)
+                try:
+                    self.scanner.SetCapability(twain.ICAP_XRESOLUTION, twain.TWTY_FIX32, resolution)
+                    self.scanner.SetCapability(twain.ICAP_YRESOLUTION, twain.TWTY_FIX32, resolution)
+                    
+                    # Set color mode
+                    if self.color_mode.get() == "Color":
+                        pixel_type = twain.TWPT_RGB
+                    elif self.color_mode.get() == "Grayscale":
+                        pixel_type = twain.TWPT_GRAY
+                    else:
+                        pixel_type = twain.TWPT_BW
+                    
+                    self.scanner.SetCapability(twain.ICAP_PIXELTYPE, twain.TWTY_UINT16, pixel_type)
+                except Exception as e:
+                    self.logger.warning(f"Could not set capabilities: {str(e)}. Using scanner defaults.")
             
             # Acquire image
             self.logger.debug("Requesting image acquisition...")
