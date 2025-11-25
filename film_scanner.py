@@ -717,12 +717,15 @@ class FilmScannerApp:
         
         # All methods failed
         error_msg = "Could not connect to scanner using any method.\n\n" + \
-                   "The scanner works with Epson's software but not via TWAIN.\n" + \
-                   "This is a known issue with some Epson models.\n\n" + \
-                   "Possible solutions:\n" + \
-                   "1. Run Epson Scan once, then restart this app\n" + \
-                   "2. Check if Epson Scan has 'TWAIN Mode' in settings\n" + \
-                   "3. The app will work in demo mode for now"
+                   "The scanner is detected but fails to open.\n" + \
+                   "This is a known issue with some Epson TWAIN drivers.\n\n" + \
+                   "Try this fix:\n" + \
+                   "1. Open PowerShell and run:\n" + \
+                   "   python -m pip install pywin32\n\n" + \
+                   "2. Restart this app\n\n" + \
+                   "This will enable WIA support which works better\n" + \
+                   "with Epson scanners than TWAIN.\n\n" + \
+                   "The app will work in demo mode for now."
         
         self.status_label.config(text="Scanner not available", fg='#ff4444')
         self.logger.error("All scanner initialization methods failed")
@@ -749,16 +752,31 @@ class FilmScannerApp:
             raise Exception("No scanners detected")
         
         self.logger.info(f"Found {len(sources)} scanner(s): {sources}")
-        scanner_name = sources[0]
         
-        try:
-            self.scanner = self.source_manager.OpenSource(scanner_name)
-            self.status_label.config(text=f"Connected: {scanner_name}", fg='#00ff00')
-            self.logger.info(f"Successfully connected to scanner: {scanner_name}")
-            return True
-        except Exception as e:
-            self.logger.error(f"OpenSource failed: {str(e)}")
-            raise
+        # Reorder sources: try WIA first, then others
+        ordered_sources = []
+        for source in sources:
+            if 'WIA-' in source:
+                ordered_sources.insert(0, source)  # WIA at front
+            else:
+                ordered_sources.append(source)
+        
+        # Try each scanner until one works
+        last_error = None
+        for scanner_name in ordered_sources:
+            try:
+                self.logger.info(f"Trying to open: {scanner_name}")
+                self.scanner = self.source_manager.OpenSource(scanner_name)
+                self.status_label.config(text=f"Connected: {scanner_name}", fg='#00ff00')
+                self.logger.info(f"Successfully connected to scanner: {scanner_name}")
+                return True
+            except Exception as e:
+                self.logger.warning(f"Failed to open {scanner_name}: {str(e)}")
+                last_error = e
+                continue
+        
+        # All scanners failed
+        raise Exception(f"Could not open any scanner. Last error: {last_error}")
     
     def _init_legacy_twain(self):
         """Try legacy TWAIN with window handle"""
@@ -782,30 +800,34 @@ class FilmScannerApp:
             raise Exception("No scanners detected")
         
         self.logger.info(f"Found {len(sources)} scanner(s): {sources}")
-        scanner_name = sources[0]
         
-        # Try to open scanner with UI (some Epson scanners require this)
-        try:
-            self.logger.info(f"Opening scanner: {scanner_name}")
-            self.scanner = self.source_manager.OpenSource(scanner_name)
-            
-            # Enable scanner
-            self.scanner.RequestAcquire(0, 0)  # UI=0 (no UI), Modal=0
-            
-            self.status_label.config(text=f"Connected: {scanner_name}", fg='#00ff00')
-            self.logger.info(f"Legacy TWAIN connected: {scanner_name}")
-            return True
-        except Exception as e:
-            self.logger.error(f"Failed to open scanner source: {str(e)}")
-            # Try with UI enabled (some scanners require this first)
+        # Reorder sources: try WIA first, then V300, then V370
+        ordered_sources = []
+        for source in sources:
+            if 'WIA-' in source:
+                ordered_sources.insert(0, source)
+            elif 'V30/V300' in source:
+                ordered_sources.insert(0 if not ordered_sources else 1, source)
+            else:
+                ordered_sources.append(source)
+        
+        # Try each scanner until one works
+        last_error = None
+        for scanner_name in ordered_sources:
             try:
-                self.logger.info("Retrying with UI enabled...")
+                self.logger.info(f"Trying to open: {scanner_name}")
                 self.scanner = self.source_manager.OpenSource(scanner_name)
+                
                 self.status_label.config(text=f"Connected: {scanner_name}", fg='#00ff00')
-                self.logger.info(f"Legacy TWAIN connected with UI: {scanner_name}")
+                self.logger.info(f"Legacy TWAIN connected: {scanner_name}")
                 return True
-            except:
-                raise
+            except Exception as e:
+                self.logger.warning(f"Failed to open {scanner_name}: {str(e)}")
+                last_error = e
+                continue
+        
+        # All scanners failed
+        raise Exception(f"Could not open any scanner. Last error: {last_error}")
     
     def _init_wia_fallback(self):
         """Try WIA as fallback (Windows Image Acquisition)"""
