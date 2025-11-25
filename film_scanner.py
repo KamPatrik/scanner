@@ -1134,29 +1134,29 @@ class FilmScannerApp:
                 os.makedirs(self.output_dir.get(), exist_ok=True)
             
             queue_item = {
-            'resolution': self.resolution.get(),
-            'color_mode': self.color_mode.get(),
-            'file_format': self.file_format.get(),
-            'brightness': self.brightness.get(),
-            'contrast': self.contrast.get(),
-            'exposure': self.exposure.get(),
-            'invert_negative': self.invert_negative.get(),
-            'remove_dust': self.remove_dust.get(),
-            'rotation_angle': self.rotation_angle.get(),
-            'flip_horizontal': self.flip_horizontal.get(),
-            'flip_vertical': self.flip_vertical.get(),
-            'auto_detect': self.auto_detect.get(),
-            'timestamp': datetime.now().strftime("%H:%M:%S")
-        }
-        
-        self.scan_queue.append(queue_item)
-        self.logger.info(f"Added scan to queue: {len(self.scan_queue)} items total")
-        self.update_queue_display()
-        messagebox.showinfo("Added to Queue", 
-                          f"Scan added to queue with current settings\n"
-                          f"Resolution: {queue_item['resolution']} DPI\n"
-                          f"Queue position: {len(self.scan_queue)}")
-        
+                'resolution': self.resolution.get(),
+                'color_mode': self.color_mode.get(),
+                'file_format': self.file_format.get(),
+                'brightness': self.brightness.get(),
+                'contrast': self.contrast.get(),
+                'exposure': self.exposure.get(),
+                'invert_negative': self.invert_negative.get(),
+                'remove_dust': self.remove_dust.get(),
+                'rotation_angle': self.rotation_angle.get(),
+                'flip_horizontal': self.flip_horizontal.get(),
+                'flip_vertical': self.flip_vertical.get(),
+                'auto_detect': self.auto_detect.get(),
+                'timestamp': datetime.now().strftime("%H:%M:%S")
+            }
+            
+            self.scan_queue.append(queue_item)
+            self.logger.info(f"Added scan to queue: {len(self.scan_queue)} items total")
+            self.update_queue_display()
+            messagebox.showinfo("Added to Queue", 
+                              f"Scan added to queue with current settings\n"
+                              f"Resolution: {queue_item['resolution']} DPI\n"
+                              f"Queue position: {len(self.scan_queue)}")
+            
         except Exception as e:
             error_msg = f"Could not add to queue: {str(e)}"
             self.logger.error(error_msg)
