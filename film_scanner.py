@@ -65,7 +65,8 @@ class FilmScannerApp:
         self.resolution = tk.IntVar(value=2400)
         self.color_mode = tk.StringVar(value="Color")
         self.file_format = tk.StringVar(value="TIFF")
-        self.output_dir = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Desktop", "Scans"))
+        default_output = os.path.normpath(os.path.join(os.path.expanduser("~"), "Desktop", "Scans"))
+        self.output_dir = tk.StringVar(value=default_output)
         self.auto_increment = tk.BooleanVar(value=True)
         self.auto_detect = tk.BooleanVar(value=True)
         self.scan_counter = 1
@@ -371,7 +372,7 @@ class FilmScannerApp:
     
     def setup_logging(self):
         """Setup logging system"""
-        log_dir = os.path.join(os.path.expanduser("~"), "Desktop", "Scans", "logs")
+        log_dir = os.path.normpath(os.path.join(os.path.expanduser("~"), "Desktop", "Scans", "logs"))
         os.makedirs(log_dir, exist_ok=True)
         
         log_file = os.path.join(log_dir, f"scanner_log_{datetime.now().strftime('%Y%m%d')}.log")
@@ -696,25 +697,96 @@ class FilmScannerApp:
             self.batch_btn.config(state=tk.DISABLED)
             return
         
+        # Try multiple initialization methods
+        methods = [
+            ("Standard TWAIN DSM", lambda: self._init_standard_twain()),
+            ("Legacy TWAIN 32-bit", lambda: self._init_legacy_twain()),
+            ("WIA fallback", lambda: self._init_wia_fallback())
+        ]
+        
+        for method_name, method in methods:
+            try:
+                self.logger.info(f"Trying initialization method: {method_name}")
+                if method():
+                    return
+            except Exception as e:
+                self.logger.warning(f"{method_name} failed: {str(e)}")
+                continue
+        
+        # All methods failed
+        error_msg = "Could not connect to scanner using any method.\n\n" + \
+                   "The scanner works with Epson's software but not via TWAIN.\n" + \
+                   "This is a known issue with some Epson models.\n\n" + \
+                   "Possible solutions:\n" + \
+                   "1. Run Epson Scan once, then restart this app\n" + \
+                   "2. Check if Epson Scan has 'TWAIN Mode' in settings\n" + \
+                   "3. The app will work in demo mode for now"
+        
+        self.status_label.config(text="Scanner not available", fg='#ff4444')
+        self.logger.error("All scanner initialization methods failed")
+        messagebox.showwarning("Scanner Not Available", error_msg)
+        self.scan_btn.config(state=tk.DISABLED)
+        self.preview_btn.config(state=tk.DISABLED)
+        self.batch_btn.config(state=tk.DISABLED)
+    
+    def _init_standard_twain(self):
+        """Try standard TWAIN initialization"""
+        self.logger.info("Attempting standard TWAIN initialization...")
+        self.source_manager = twain.SourceManager(0)
+        sources = self.source_manager.GetSourceList()
+        
+        if not sources:
+            raise Exception("No scanners detected")
+        
+        self.logger.info(f"Found {len(sources)} scanner(s): {sources}")
+        scanner_name = sources[0]
+        self.scanner = self.source_manager.OpenSource(scanner_name)
+        self.status_label.config(text=f"Connected: {scanner_name}", fg='#00ff00')
+        self.logger.info(f"Successfully connected to scanner: {scanner_name}")
+        return True
+    
+    def _init_legacy_twain(self):
+        """Try legacy TWAIN with window handle"""
+        self.logger.info("Attempting legacy TWAIN initialization...")
+        import ctypes
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        self.source_manager = twain.SourceManager(hwnd)
+        sources = self.source_manager.GetSourceList()
+        
+        if not sources:
+            raise Exception("No scanners detected")
+        
+        scanner_name = sources[0]
+        self.scanner = self.source_manager.OpenSource(scanner_name)
+        self.status_label.config(text=f"Connected: {scanner_name}", fg='#00ff00')
+        self.logger.info(f"Legacy TWAIN connected: {scanner_name}")
+        return True
+    
+    def _init_wia_fallback(self):
+        """Try WIA as fallback (Windows Image Acquisition)"""
+        self.logger.info("Attempting WIA fallback...")
         try:
-            self.logger.info("Initializing scanner connection...")
-            self.source_manager = twain.SourceManager(0)
-            sources = self.source_manager.GetSourceList()
+            import win32com.client
+            wia = win32com.client.Dispatch("WIA.DeviceManager")
+            devices = wia.DeviceInfos
             
-            if not sources:
-                raise Exception("No scanners detected. Please check USB connection and driver installation.")
+            if devices.Count == 0:
+                raise Exception("No WIA devices found")
             
-            self.logger.info(f"Found {len(sources)} scanner(s): {sources}")
-            scanner_name = sources[0]
-            self.scanner = self.source_manager.OpenSource(scanner_name)
-            self.status_label.config(text=f"Connected: {scanner_name}", fg='#00ff00')
-            self.logger.info(f"Successfully connected to scanner: {scanner_name}")
+            device_name = devices[1].Properties("Name").Value
+            self.logger.info(f"Found WIA device: {device_name}")
+            self.status_label.config(text=f"Connected (WIA): {device_name}", fg='#00ff00')
             
+            # Store WIA device for later use
+            self.wia_device = wia.DeviceInfos[1].Connect()
+            self.scanner = None  # Mark as WIA mode
+            return True
+        except ImportError:
+            self.logger.warning("WIA not available (pywin32 not installed)")
+            return False
         except Exception as e:
-            error_msg = f"Could not connect to scanner:\n{str(e)}"
-            self.status_label.config(text=f"Error: {str(e)}", fg='#ff4444')
-            self.logger.error(f"Scanner initialization failed: {str(e)}\n{traceback.format_exc()}")
-            messagebox.showerror("Scanner Error", error_msg)
+            self.logger.warning(f"WIA initialization failed: {str(e)}")
+            return False
     
     def browse_directory(self):
         """Browse for output directory"""
