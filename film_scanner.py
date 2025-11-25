@@ -72,7 +72,9 @@ class FilmScannerApp:
         self.scan_counter = 1
         
         self.setup_ui()
-        self.initialize_scanner()
+        
+        # Initialize scanner after window is shown
+        self.root.after(100, self.initialize_scanner)
         
         # Bind adjustment changes to update preview
         self.brightness.trace_add('write', self.update_preview_adjustments)
@@ -732,7 +734,15 @@ class FilmScannerApp:
     def _init_standard_twain(self):
         """Try standard TWAIN initialization"""
         self.logger.info("Attempting standard TWAIN initialization...")
-        self.source_manager = twain.SourceManager(0)
+        
+        # Ensure window is ready
+        self.root.update()
+        
+        # Get proper window handle for TWAIN
+        import ctypes
+        hwnd = int(self.root.wm_frame(), 16)
+        
+        self.source_manager = twain.SourceManager(hwnd)
         sources = self.source_manager.GetSourceList()
         
         if not sources:
@@ -740,27 +750,62 @@ class FilmScannerApp:
         
         self.logger.info(f"Found {len(sources)} scanner(s): {sources}")
         scanner_name = sources[0]
-        self.scanner = self.source_manager.OpenSource(scanner_name)
-        self.status_label.config(text=f"Connected: {scanner_name}", fg='#00ff00')
-        self.logger.info(f"Successfully connected to scanner: {scanner_name}")
-        return True
+        
+        try:
+            self.scanner = self.source_manager.OpenSource(scanner_name)
+            self.status_label.config(text=f"Connected: {scanner_name}", fg='#00ff00')
+            self.logger.info(f"Successfully connected to scanner: {scanner_name}")
+            return True
+        except Exception as e:
+            self.logger.error(f"OpenSource failed: {str(e)}")
+            raise
     
     def _init_legacy_twain(self):
         """Try legacy TWAIN with window handle"""
         self.logger.info("Attempting legacy TWAIN initialization...")
         import ctypes
-        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        
+        # Ensure window is visible and focused
+        self.root.update()
+        self.root.focus_force()
+        self.root.after(100)  # Small delay for window to be ready
+        self.root.update()
+        
+        # Get window handle
+        hwnd = int(self.root.wm_frame(), 16)  # Convert Tk window to hwnd
+        self.logger.info(f"Using window handle: {hwnd}")
+        
         self.source_manager = twain.SourceManager(hwnd)
         sources = self.source_manager.GetSourceList()
         
         if not sources:
             raise Exception("No scanners detected")
         
+        self.logger.info(f"Found {len(sources)} scanner(s): {sources}")
         scanner_name = sources[0]
-        self.scanner = self.source_manager.OpenSource(scanner_name)
-        self.status_label.config(text=f"Connected: {scanner_name}", fg='#00ff00')
-        self.logger.info(f"Legacy TWAIN connected: {scanner_name}")
-        return True
+        
+        # Try to open scanner with UI (some Epson scanners require this)
+        try:
+            self.logger.info(f"Opening scanner: {scanner_name}")
+            self.scanner = self.source_manager.OpenSource(scanner_name)
+            
+            # Enable scanner
+            self.scanner.RequestAcquire(0, 0)  # UI=0 (no UI), Modal=0
+            
+            self.status_label.config(text=f"Connected: {scanner_name}", fg='#00ff00')
+            self.logger.info(f"Legacy TWAIN connected: {scanner_name}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to open scanner source: {str(e)}")
+            # Try with UI enabled (some scanners require this first)
+            try:
+                self.logger.info("Retrying with UI enabled...")
+                self.scanner = self.source_manager.OpenSource(scanner_name)
+                self.status_label.config(text=f"Connected: {scanner_name}", fg='#00ff00')
+                self.logger.info(f"Legacy TWAIN connected with UI: {scanner_name}")
+                return True
+            except:
+                raise
     
     def _init_wia_fallback(self):
         """Try WIA as fallback (Windows Image Acquisition)"""
