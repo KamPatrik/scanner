@@ -916,8 +916,12 @@ class FilmScannerApp:
                 except Exception as e:
                     self.logger.warning(f"Could not set resolution for preview: {e}")
             
-            # Request scan
-            self.scanner.RequestAcquire(0, 0)
+            # Request scan - WIA scanners require UI to be shown
+            if self.is_wia or 'WIA-' in self.scanner_name:
+                self.logger.info("WIA scanner - showing UI dialog")
+                self.scanner.RequestAcquire(1, 1)  # Show UI, modal
+            else:
+                self.scanner.RequestAcquire(0, 0)  # No UI
             image = self.scanner.XferImageNatively()[0]
             
             if not image:
@@ -1023,9 +1027,14 @@ class FilmScannerApp:
                 except Exception as e:
                     self.logger.warning(f"Could not set capabilities: {str(e)}. Using scanner defaults.")
             
-            # Acquire image
+            # Acquire image - WIA scanners require UI to be shown
             self.logger.debug("Requesting image acquisition...")
-            self.scanner.RequestAcquire(0, 0)
+            if self.is_wia or 'WIA-' in self.scanner_name:
+                self.logger.info("WIA scanner - showing UI dialog for scan settings")
+                self.scanner.RequestAcquire(1, 1)  # Show UI, modal
+            else:
+                self.scanner.RequestAcquire(0, 0)  # No UI
+            
             image_data = self.scanner.XferImageNatively()[0]
             
             if not image_data:
