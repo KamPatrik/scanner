@@ -896,7 +896,12 @@ class FilmScannerApp:
             return
         
         self.status_label.config(text="Generating preview...", fg='#ffa500')
-        threading.Thread(target=self._do_preview, daemon=True).start()
+        
+        # WIA scanners need UI on main thread
+        if self.is_wia or 'WIA-' in self.scanner_name:
+            self._do_preview()
+        else:
+            threading.Thread(target=self._do_preview, daemon=True).start()
     
     def _do_preview(self):
         """Perform preview scan in background thread"""
@@ -983,7 +988,12 @@ class FilmScannerApp:
         
         self.status_label.config(text="Scanning...", fg='#ffa500')
         self.scan_btn.config(state=tk.DISABLED)
-        threading.Thread(target=self._do_scan, daemon=True).start()
+        
+        # WIA scanners need UI on main thread
+        if self.is_wia or 'WIA-' in self.scanner_name:
+            self._do_scan()
+        else:
+            threading.Thread(target=self._do_scan, daemon=True).start()
     
     def _do_scan(self):
         """Perform scan in background thread"""
