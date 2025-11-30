@@ -927,13 +927,33 @@ class FilmScannerApp:
                 self.scanner.RequestAcquire(1, 1)  # Show UI, modal
             else:
                 self.scanner.RequestAcquire(0, 0)  # No UI
-            image = self.scanner.XferImageNatively()[0]
             
-            if not image:
+            # Get image data
+            (image_handle, more_images) = self.scanner.XferImageNatively()
+            
+            if not image_handle:
                 raise Exception("No image data received from scanner")
             
-            # Convert and display
-            self.preview_image_original = Image.open(image)
+            # Convert DIB handle to PIL Image
+            import twain
+            self.preview_image_original = twain.DIBToBMFile(image_handle)
+            
+            if isinstance(self.preview_image_original, (str, bytes)):
+                # It's a file path or bytes
+                self.preview_image_original = Image.open(self.preview_image_original)
+            elif isinstance(self.preview_image_original, int):
+                # Still a handle, use alternative method
+                from io import BytesIO
+                dib_data = twain.GlobalLock(image_handle)
+                try:
+                    # Convert DIB to BMP in memory
+                    bmp_data = BytesIO()
+                    bmp_data.write(dib_data)
+                    bmp_data.seek(0)
+                    self.preview_image_original = Image.open(bmp_data)
+                finally:
+                    twain.GlobalUnlock(image_handle)
+                    twain.GlobalFree(image_handle)
             
             if self.preview_image_original.size[0] == 0 or self.preview_image_original.size[1] == 0:
                 raise Exception("Invalid image dimensions received")
@@ -1045,12 +1065,32 @@ class FilmScannerApp:
             else:
                 self.scanner.RequestAcquire(0, 0)  # No UI
             
-            image_data = self.scanner.XferImageNatively()[0]
+            # Get image data
+            (image_handle, more_images) = self.scanner.XferImageNatively()
             
-            if not image_data:
+            if not image_handle:
                 raise Exception("No image data received from scanner")
             
-            image = Image.open(image_data)
+            # Convert DIB handle to PIL Image
+            import twain
+            image = twain.DIBToBMFile(image_handle)
+            
+            if isinstance(image, (str, bytes)):
+                # It's a file path or bytes
+                image = Image.open(image)
+            elif isinstance(image, int):
+                # Still a handle, use alternative method
+                from io import BytesIO
+                dib_data = twain.GlobalLock(image_handle)
+                try:
+                    # Convert DIB to BMP in memory
+                    bmp_data = BytesIO()
+                    bmp_data.write(dib_data)
+                    bmp_data.seek(0)
+                    image = Image.open(bmp_data)
+                finally:
+                    twain.GlobalUnlock(image_handle)
+                    twain.GlobalFree(image_handle)
             
             if image.size[0] == 0 or image.size[1] == 0:
                 raise Exception("Invalid image dimensions received")
