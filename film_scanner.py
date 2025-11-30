@@ -902,18 +902,19 @@ class FilmScannerApp:
         """Perform preview scan in background thread"""
         try:
             self.logger.info("Starting preview scan...")
+            self.logger.info(f"Scanner: {self.scanner_name}, is_wia: {self.is_wia}")
             
             if not self.scanner:
                 raise Exception("Scanner not initialized")
             
             # Set up scanner for preview (lower resolution)
             # WIA drivers may not support all capabilities
-            if not self.is_wia:
+            if not self.is_wia and 'WIA-' not in self.scanner_name:
                 try:
                     self.scanner.SetCapability(twain.ICAP_XRESOLUTION, twain.TWTY_FIX32, 150)
                     self.scanner.SetCapability(twain.ICAP_YRESOLUTION, twain.TWTY_FIX32, 150)
-                except:
-                    self.logger.warning("Could not set resolution for preview, using defaults")
+                except Exception as e:
+                    self.logger.warning(f"Could not set resolution for preview: {e}")
             
             # Request scan
             self.scanner.RequestAcquire(0, 0)
@@ -999,8 +1000,10 @@ class FilmScannerApp:
             if resolution < 75 or resolution > 6400:
                 raise ValueError(f"Invalid resolution: {resolution}. Must be between 75 and 6400 DPI.")
             
+            self.logger.info(f"Scanner: {self.scanner_name}, is_wia: {self.is_wia}")
+            
             # WIA drivers have limited capability support
-            if self.is_wia:
+            if self.is_wia or 'WIA-' in self.scanner_name:
                 self.logger.warning("WIA scanner detected - using simplified settings")
                 self.logger.info("Note: Resolution and color mode will be set through scanner UI")
             else:
