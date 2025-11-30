@@ -756,12 +756,20 @@ class FilmScannerApp:
         
         self.logger.info(f"Found {len(sources)} scanner(s): {sources}")
         
-        # Reorder sources: try WIA first, then others
+        # Reorder sources: AVOID WIA for film scanning, prefer native TWAIN
+        # Native TWAIN drivers support transparency/film settings better
         ordered_sources = []
         for source in sources:
+            if 'WIA-' not in source:
+                # Prefer V300 over V370 if both present
+                if 'V30/V300' in source:
+                    ordered_sources.insert(0, source)  # V300 at front
+                else:
+                    ordered_sources.append(source)
+        
+        # Add WIA as last resort
+        for source in sources:
             if 'WIA-' in source:
-                ordered_sources.insert(0, source)  # WIA at front
-            else:
                 ordered_sources.append(source)
         
         # Try each scanner until one works
@@ -806,14 +814,18 @@ class FilmScannerApp:
         
         self.logger.info(f"Found {len(sources)} scanner(s): {sources}")
         
-        # Reorder sources: try WIA first, then V300, then V370
+        # Reorder sources: AVOID WIA for film scanning, prefer native TWAIN
         ordered_sources = []
         for source in sources:
+            if 'WIA-' not in source:
+                if 'V30/V300' in source:
+                    ordered_sources.insert(0, source)  # V300 first
+                else:
+                    ordered_sources.append(source)
+        
+        # Add WIA as last resort
+        for source in sources:
             if 'WIA-' in source:
-                ordered_sources.insert(0, source)
-            elif 'V30/V300' in source:
-                ordered_sources.insert(0 if not ordered_sources else 1, source)
-            else:
                 ordered_sources.append(source)
         
         # Try each scanner until one works
@@ -936,12 +948,21 @@ class FilmScannerApp:
                 except Exception as e:
                     self.logger.warning(f"Could not set all capabilities for preview: {e}")
             
-            # Request scan - WIA scanners require UI to be shown
-            if self.is_wia or 'WIA-' in self.scanner_name:
-                self.logger.info("WIA scanner - showing UI dialog")
-                self.scanner.RequestAcquire(1, 1)  # Show UI, modal
-            else:
-                self.scanner.RequestAcquire(0, 0)  # No UI
+            # Request scan - Always show UI for film scanning configuration
+            self.logger.info("Showing scanner UI for film settings")
+            
+            # Show instruction for film scanning
+            messagebox.showinfo("Film Scanning - IMPORTANT!",
+                "The Epson Scan window will open.\n\n"
+                "CRITICAL STEPS:\n"
+                "1. Look for 'Document Type' or mode selector\n"
+                "2. Change from 'Reflective' to 'Film' or 'Transparency'\n"
+                "3. Select 'Negative Film' or 'Positive Film'\n"
+                "4. Choose film holder type (35mm, etc.)\n"
+                "5. Preview and select scan area\n\n"
+                "The backlight will turn ON when you select Film mode!")
+            
+            self.scanner.RequestAcquire(1, 1)  # Always show UI for film scanning
             
             # Get image data
             rv = self.scanner.XferImageNatively()
@@ -1096,13 +1117,22 @@ class FilmScannerApp:
                 except Exception as e:
                     self.logger.warning(f"Could not set capabilities: {str(e)}. Using scanner defaults.")
             
-            # Acquire image - WIA scanners require UI to be shown
+            # Acquire image - Always show UI for film scanning
             self.logger.debug("Requesting image acquisition...")
-            if self.is_wia or 'WIA-' in self.scanner_name:
-                self.logger.info("WIA scanner - showing UI dialog for scan settings")
-                self.scanner.RequestAcquire(1, 1)  # Show UI, modal
-            else:
-                self.scanner.RequestAcquire(0, 0)  # No UI
+            self.logger.info("Showing scanner UI for film settings")
+            
+            # Show instruction for film scanning
+            messagebox.showinfo("Film Scanning - IMPORTANT!",
+                "The Epson Scan window will open.\n\n"
+                "CRITICAL STEPS:\n"
+                "1. Look for 'Document Type' or mode selector\n"
+                "2. Change from 'Reflective' to 'Film' or 'Transparency'\n"
+                "3. Select 'Negative Film' or 'Positive Film'\n"
+                "4. Choose film holder type (35mm, etc.)\n"
+                "5. Set your scan resolution and area\n\n"
+                "The backlight will turn ON when you select Film mode!")
+            
+            self.scanner.RequestAcquire(1, 1)  # Always show UI for film scanning
             
             # Get image data
             rv = self.scanner.XferImageNatively()
