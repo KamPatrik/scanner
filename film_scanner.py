@@ -913,13 +913,28 @@ class FilmScannerApp:
                 raise Exception("Scanner not initialized")
             
             # Set up scanner for preview (lower resolution)
-            # WIA drivers may not support all capabilities
+            # Configure for film/transparency scanning
             if not self.is_wia and 'WIA-' not in self.scanner_name:
                 try:
+                    # Set document source to transparency unit (film holder with backlight)
+                    try:
+                        # CAP_FEEDERENABLED = False for flatbed/transparency
+                        self.scanner.SetCapability(twain.CAP_FEEDERENABLED, twain.TWTY_BOOL, False)
+                    except:
+                        pass
+                    
+                    try:
+                        # Set to transparency/film mode (this enables backlight)
+                        # ICAP_LIGHTPATH = 0x1005, TWLP_TRANSMISSIVE = 1
+                        self.scanner.SetCapability(0x1005, twain.TWTY_UINT16, 1)
+                    except:
+                        self.logger.warning("Could not set transparency mode - may need to set in scanner UI")
+                    
+                    # Set resolution
                     self.scanner.SetCapability(twain.ICAP_XRESOLUTION, twain.TWTY_FIX32, 150)
                     self.scanner.SetCapability(twain.ICAP_YRESOLUTION, twain.TWTY_FIX32, 150)
                 except Exception as e:
-                    self.logger.warning(f"Could not set resolution for preview: {e}")
+                    self.logger.warning(f"Could not set all capabilities for preview: {e}")
             
             # Request scan - WIA scanners require UI to be shown
             if self.is_wia or 'WIA-' in self.scanner_name:
@@ -929,31 +944,38 @@ class FilmScannerApp:
                 self.scanner.RequestAcquire(0, 0)  # No UI
             
             # Get image data
-            (image_handle, more_images) = self.scanner.XferImageNatively()
+            rv = self.scanner.XferImageNatively()
+            
+            # Handle both return formats: (handle, more) or just handle
+            if isinstance(rv, tuple):
+                image_handle = rv[0]
+            else:
+                image_handle = rv
             
             if not image_handle:
                 raise Exception("No image data received from scanner")
             
-            # Convert DIB handle to PIL Image
-            import twain
-            self.preview_image_original = twain.DIBToBMFile(image_handle)
+            # Convert DIB handle to PIL Image using pytwain's method
+            import tempfile
+            temp_bmp = tempfile.mktemp(suffix='.bmp')
             
-            if isinstance(self.preview_image_original, (str, bytes)):
-                # It's a file path or bytes
-                self.preview_image_original = Image.open(self.preview_image_original)
-            elif isinstance(self.preview_image_original, int):
-                # Still a handle, use alternative method
-                from io import BytesIO
-                dib_data = twain.GlobalLock(image_handle)
-                try:
-                    # Convert DIB to BMP in memory
-                    bmp_data = BytesIO()
-                    bmp_data.write(dib_data)
-                    bmp_data.seek(0)
-                    self.preview_image_original = Image.open(bmp_data)
-                finally:
-                    twain.GlobalUnlock(image_handle)
-                    twain.GlobalFree(image_handle)
+            try:
+                # Use twain module's DIBToBMFile if available
+                import twain
+                if hasattr(twain, 'DIBToBMFile'):
+                    twain.DIBToBMFile(image_handle, temp_bmp)
+                    self.preview_image_original = Image.open(temp_bmp)
+                else:
+                    # Fallback: save handle as temp file and open
+                    # This is what pytwain does internally
+                    from PIL import ImageWin
+                    self.preview_image_original = ImageWin.Dib(image_handle).image
+            finally:
+                if os.path.exists(temp_bmp):
+                    try:
+                        os.remove(temp_bmp)
+                    except:
+                        pass
             
             if self.preview_image_original.size[0] == 0 or self.preview_image_original.size[1] == 0:
                 raise Exception("Invalid image dimensions received")
@@ -1039,9 +1061,26 @@ class FilmScannerApp:
             # WIA drivers have limited capability support
             if self.is_wia or 'WIA-' in self.scanner_name:
                 self.logger.warning("WIA scanner detected - using simplified settings")
-                self.logger.info("Note: Resolution and color mode will be set through scanner UI")
+                self.logger.info("Note: Resolution, color mode, and film settings will be set through scanner UI")
+                self.logger.info("IMPORTANT: In the Epson dialog, select 'Film' or 'Transparency' as document type!")
             else:
                 try:
+                    # Configure for film/transparency scanning
+                    try:
+                        # Disable feeder (use flatbed/transparency unit)
+                        self.scanner.SetCapability(twain.CAP_FEEDERENABLED, twain.TWTY_BOOL, False)
+                    except:
+                        pass
+                    
+                    try:
+                        # Set to transparency mode (enables backlight)
+                        # ICAP_LIGHTPATH = 0x1005, TWLP_TRANSMISSIVE = 1
+                        self.scanner.SetCapability(0x1005, twain.TWTY_UINT16, 1)
+                        self.logger.info("Transparency/film mode enabled (backlight on)")
+                    except:
+                        self.logger.warning("Could not set transparency mode - set 'Film' in scanner UI")
+                    
+                    # Set resolution
                     self.scanner.SetCapability(twain.ICAP_XRESOLUTION, twain.TWTY_FIX32, resolution)
                     self.scanner.SetCapability(twain.ICAP_YRESOLUTION, twain.TWTY_FIX32, resolution)
                     
@@ -1066,31 +1105,38 @@ class FilmScannerApp:
                 self.scanner.RequestAcquire(0, 0)  # No UI
             
             # Get image data
-            (image_handle, more_images) = self.scanner.XferImageNatively()
+            rv = self.scanner.XferImageNatively()
+            
+            # Handle both return formats: (handle, more) or just handle
+            if isinstance(rv, tuple):
+                image_handle = rv[0]
+            else:
+                image_handle = rv
             
             if not image_handle:
                 raise Exception("No image data received from scanner")
             
-            # Convert DIB handle to PIL Image
-            import twain
-            image = twain.DIBToBMFile(image_handle)
+            # Convert DIB handle to PIL Image using pytwain's method
+            import tempfile
+            temp_bmp = tempfile.mktemp(suffix='.bmp')
             
-            if isinstance(image, (str, bytes)):
-                # It's a file path or bytes
-                image = Image.open(image)
-            elif isinstance(image, int):
-                # Still a handle, use alternative method
-                from io import BytesIO
-                dib_data = twain.GlobalLock(image_handle)
-                try:
-                    # Convert DIB to BMP in memory
-                    bmp_data = BytesIO()
-                    bmp_data.write(dib_data)
-                    bmp_data.seek(0)
-                    image = Image.open(bmp_data)
-                finally:
-                    twain.GlobalUnlock(image_handle)
-                    twain.GlobalFree(image_handle)
+            try:
+                # Use twain module's DIBToBMFile if available
+                import twain
+                if hasattr(twain, 'DIBToBMFile'):
+                    twain.DIBToBMFile(image_handle, temp_bmp)
+                    image = Image.open(temp_bmp)
+                else:
+                    # Fallback: save handle as temp file and open
+                    # This is what pytwain does internally
+                    from PIL import ImageWin
+                    image = ImageWin.Dib(image_handle).image
+            finally:
+                if os.path.exists(temp_bmp):
+                    try:
+                        os.remove(temp_bmp)
+                    except:
+                        pass
             
             if image.size[0] == 0 or image.size[1] == 0:
                 raise Exception("Invalid image dimensions received")
